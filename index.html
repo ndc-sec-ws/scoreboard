@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GitHub Actions Security Workshop — Scoreboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    header h1 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #f0f6fc;
+    }
+
+    header p {
+      margin-top: 0.4rem;
+      color: #8b949e;
+      font-size: 0.9rem;
+    }
+
+    #last-updated {
+      display: inline-block;
+      margin-top: 0.6rem;
+      font-size: 0.78rem;
+      color: #6e7681;
+    }
+
+    .challenges-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      padding: 0 0.5rem;
+    }
+
+    .challenge-labels {
+      display: flex;
+      gap: 0.35rem;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      font-size: 0.7rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 2rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .badge-1  { background: #238636; color: #aff5b4; }
+    .badge-2  { background: #1f6feb; color: #cae8ff; }
+    .badge-3  { background: #9e6a03; color: #fae17d; }
+    .badge-4  { background: #da3633; color: #ffa198; }
+    .badge-5  { background: #6e40c9; color: #d2a8ff; }
+    .badge-6  { background: #bf4b8a; color: #ffadda; }
+    .badge-7  { background: #bf4b8a; color: #ffadda; }
+
+    .difficulty {
+      font-size: 0.75rem;
+      color: #8b949e;
+    }
+
+    table {
+      width: 100%;
+      max-width: 900px;
+      margin: 0 auto;
+      border-collapse: collapse;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    thead tr {
+      background: #21262d;
+    }
+
+    th, td {
+      padding: 0.65rem 1rem;
+      text-align: left;
+      font-size: 0.875rem;
+      border-bottom: 1px solid #21262d;
+    }
+
+    th {
+      color: #8b949e;
+      font-weight: 600;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    tbody tr:last-child td { border-bottom: none; }
+
+    tbody tr:hover { background: #1c2128; }
+
+    .rank {
+      font-weight: 700;
+      color: #8b949e;
+      width: 3rem;
+      text-align: center;
+    }
+
+    .rank.gold   { color: #e3b341; }
+    .rank.silver { color: #8b949e; }
+    .rank.bronze { color: #da3633; }
+
+    .username a {
+      color: #58a6ff;
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .username a:hover { text-decoration: underline; }
+
+    .solved-count {
+      font-weight: 700;
+      color: #3fb950;
+      text-align: center;
+    }
+
+    .challenges-cell {
+      display: flex;
+      gap: 0.3rem;
+      flex-wrap: wrap;
+    }
+
+    .first-solve {
+      color: #6e7681;
+      font-size: 0.78rem;
+      white-space: nowrap;
+    }
+
+    #loading, #error {
+      text-align: center;
+      padding: 3rem;
+      color: #8b949e;
+    }
+
+    #error { color: #f85149; }
+
+    .legend {
+      max-width: 900px;
+      margin: 1.5rem auto 0;
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      padding: 0 0.25rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🔐 GitHub Actions Security Workshop</h1>
+    <p>Live Scoreboard</p>
+    <span id="last-updated"></span>
+  </header>
+
+  <div id="loading">Loading scores…</div>
+  <div id="error" style="display:none"></div>
+
+  <table id="scoreboard" style="display:none">
+    <thead>
+      <tr>
+        <th class="rank">#</th>
+        <th>Participant</th>
+        <th style="text-align:center">Solved</th>
+        <th>Challenges</th>
+        <th>First solve</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+
+  <div class="legend" id="legend" style="display:none"></div>
+
+  <script>
+    const CHALLENGE_META = [
+      { id: 1, label: "C1", difficulty: "🟢" },
+      { id: 2, label: "C2", difficulty: "🟢" },
+      { id: 3, label: "C3", difficulty: "🟡" },
+      { id: 4, label: "C4", difficulty: "🟡" },
+      { id: 5, label: "C5", difficulty: "🟠" },
+      { id: 6, label: "C6", difficulty: "🟠" },
+      { id: 7, label: "C7", difficulty: "🔴" },
+    ];
+
+    async function loadScores() {
+      try {
+        const resp = await fetch("scores.json?_=" + Date.now());
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        render(data);
+      } catch (e) {
+        document.getElementById("loading").style.display = "none";
+        const err = document.getElementById("error");
+        err.textContent = "Could not load scores: " + e.message;
+        err.style.display = "block";
+      }
+    }
+
+    function render(data) {
+      document.getElementById("loading").style.display = "none";
+
+      if (data.updated_at) {
+        const d = new Date(data.updated_at);
+        document.getElementById("last-updated").textContent =
+          "Last updated: " + d.toLocaleString();
+      }
+
+      // Build legend
+      const legend = document.getElementById("legend");
+      legend.innerHTML = "";
+      CHALLENGE_META.forEach(c => {
+        const span = document.createElement("span");
+        span.className = `badge badge-${c.id}`;
+        span.textContent = `${c.difficulty} ${c.label}`;
+        legend.appendChild(span);
+      });
+      legend.style.display = "flex";
+
+      const players = data.players || [];
+      players.sort((a, b) => b.solved.length - a.solved.length || new Date(a.first_solve) - new Date(b.first_solve));
+
+      const tbody = document.getElementById("rows");
+      tbody.innerHTML = "";
+      players.forEach((p, i) => {
+        const rank = i + 1;
+        const rankClass = rank === 1 ? "gold" : rank === 2 ? "silver" : rank === 3 ? "bronze" : "";
+
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td class="rank ${rankClass}">${rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : rank}</td>
+          <td class="username"><a href="https://github.com/${p.username}" target="_blank">@${p.username}</a></td>
+          <td class="solved-count">${p.solved.length} / ${CHALLENGE_META.length}</td>
+          <td class="challenges-cell">${renderBadges(p.solved)}</td>
+          <td class="first-solve">${p.first_solve ? relativeTime(new Date(p.first_solve)) : "—"}</td>
+        `;
+        tbody.appendChild(row);
+      });
+
+      if (players.length === 0) {
+        const row = document.createElement("tr");
+        row.innerHTML = `<td colspan="5" style="text-align:center;color:#6e7681;padding:2rem">No solves yet — be the first!</td>`;
+        tbody.appendChild(row);
+      }
+
+      document.getElementById("scoreboard").style.display = "table";
+    }
+
+    function renderBadges(solved) {
+      return CHALLENGE_META
+        .filter(c => solved.includes(c.id))
+        .map(c => `<span class="badge badge-${c.id}">${c.difficulty} ${c.label}</span>`)
+        .join("");
+    }
+
+    function relativeTime(date) {
+      const diff = Date.now() - date.getTime();
+      const mins = Math.floor(diff / 60000);
+      if (mins < 1)  return "just now";
+      if (mins < 60) return `${mins}m ago`;
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24)  return `${hrs}h ago`;
+      return date.toLocaleDateString();
+    }
+
+    loadScores();
+    // Refresh every 30 seconds during the workshop
+    setInterval(loadScores, 30000);
+  </script>
+</body>
+</html>
